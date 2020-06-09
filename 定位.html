@@ -1,0 +1,145 @@
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+	<style type="text/css">
+		body, html{width: 100%;height: 100%;margin:0;font-family:"微软雅黑";font-size:14px;}
+		#l-map{height:90%;width:100%;}
+		#r-result{width:100%;}
+	</style>
+	<script type="text/javascript" src="http://api.map.baidu.com/api?v=2.0&ak=xT2NdGBkzUkNiK5BiaT6Lmv7Go8rl7Ov"></script>
+	<title>经纬度转换</title>
+</head>
+<body>
+	<div id="l-map"></div>
+	<div>
+		经度:<input type="text" id="Lat" size="20" value="" style="width:150px;" />
+		纬度:<input type="text" id="Lon" size="20" value="" style="width:150px;" />
+		<input type="button" value="定位"" onclick="bdGEO()" />
+	</div>
+    </br>
+	<div>
+		经纬度:<input type="text" id="LatLon" size="20" value="" style="width:150px;" />
+		<input type="button" value="定位"" onclick="bdGEO1()" />
+	</div>
+
+</body>
+</html>
+<script type="text/javascript">
+	var map = new BMap.Map("l-map");
+	map.centerAndZoom("福州",12);   // 初始化地图,设置城市和地图级别。
+	map.enableScrollWheelZoom();   // 启用滚轮放大缩小，默认禁用
+	map.enableContinuousZoom();    // 启用地图惯性拖拽，默认禁用
+
+	var top_left_control = new BMap.ScaleControl({anchor: BMAP_ANCHOR_BOTTOM_LEFT});// 左下角，添加比例尺
+	var top_left_navigation = new BMap.NavigationControl();  //左上角，添加默认缩放平移控件
+	
+	// 添加地图类型和缩略图
+	var mapType1 = new BMap.MapTypeControl(
+		{
+			mapTypes: [BMAP_NORMAL_MAP,BMAP_HYBRID_MAP],
+			anchor: BMAP_ANCHOR_TOP_RIGHT
+		}
+	);
+	var overView = new BMap.OverviewMapControl();
+	var overViewOpen = new BMap.OverviewMapControl({isOpen:true, anchor: BMAP_ANCHOR_BOTTOM_RIGHT});
+
+	map.addControl(top_left_control);        
+	map.addControl(top_left_navigation);     
+
+	map.addControl(mapType1);          //2D图，混合图（右上角）
+	map.addControl(overView);          //添加默认缩略地图控件
+	map.addControl(overViewOpen);      //右下角，打开
+
+	var size = new BMap.Size(20, 50);
+	map.addControl(new BMap.CityListControl({
+		anchor: BMAP_ANCHOR_TOP_RIGHT,
+		offset: size,
+		// 切换城市之前事件
+		// onChangeBefore: function(){
+		//    alert('before');
+		// },
+		// 切换城市之后事件
+		// onChangeAfter:function(){
+		//   alert('after');
+		// }
+	}));
+
+	function bdGEO(){
+		map.clearOverlays();         
+		// N24°30'56.760"
+		// E117°41'6.702"
+		let Lat = document.getElementById("Lat").value;
+		Lat = Lat.substring(1); // 从索引1开始到结束
+		let NewLat = latLngDegreesToDecimal(Lat);
+
+		let Lon = document.getElementById("Lon").value;
+		Lon = Lon.substring(1); // 从索引1开始到结束
+		let NewLon = latLngDegreesToDecimal(Lon);
+
+		var ggPoint = new BMap.Point(NewLon,NewLat);
+		setTimeout(function(){
+			var convertor = new BMap.Convertor();
+			var pointArr = [];
+			pointArr.push(ggPoint);
+			convertor.translate(pointArr, 1, 5, translateCallback)
+		}, 500);
+	}
+
+	function bdGEO1(){
+		// N24°30'56.760"E117°41'6.702"
+		map.clearOverlays();     
+		let LatLon = document.getElementById("LatLon").value;
+		LatLon = LatLon.trim()
+		LatLon = LatLon.substring(1); // 从索引1开始到结束
+		let degreesArr = LatLon.split('E');
+		
+		let NewLat = latLngDegreesToDecimal(degreesArr[0]);
+		let NewLon = latLngDegreesToDecimal(degreesArr[1]);
+
+		var ggPoint = new BMap.Point(NewLon,NewLat);
+		setTimeout(function(){
+			var convertor = new BMap.Convertor();
+			var pointArr = [];
+			pointArr.push(ggPoint);
+			convertor.translate(pointArr, 1, 5, translateCallback)
+		}, 1);
+	}
+
+	//坐标转换完之后的回调函数
+	translateCallback = function (data){
+		if(data.status === 0) {
+			var marker = new BMap.Marker(data.points[0]);
+			map.addOverlay(marker);
+			var label = new BMap.Label("航标位置",{offset:new BMap.Size(20,-10)});
+			marker.setLabel(label); //添加百度label
+			map.setCenter(data.points[0]);
+		}
+	}
+
+	/*
+		Decimal Degrees = Degrees + minutes/60 + seconds/3600
+		例：57°55'56.6" =57+55/60+56.6/3600=57.9323888888888
+		return Float or NaN
+	*/
+	function latLngDegreesToDecimal (degreesStr) {
+		let degreesArr = degreesStr.split('°');
+		let degrees = degreesArr[0];
+		let isNegative = Math.abs(degrees) !== parseInt(degrees);
+		if (degreesArr.length === 1) {
+			return parseInt(degrees);
+		}
+
+		let minutesArr = degreesArr[1].split('\'');
+		let minutes = minutesArr[0];
+		if (minutesArr.length === 1) {
+			return parseFloat((isNegative ? '-' : '') + (Math.abs(degrees) + Math.abs(minutes) / 60));
+		}
+
+		let secondsStr = minutesArr[1];
+		let secondsArr = secondsStr.split('"');
+		let seconds = secondsArr[0];
+
+		return parseFloat((isNegative ? '-' : '') + (Math.abs(degrees) + Math.abs(minutes) / 60 + Math.abs(seconds) / 3600));
+	}
+</script>
