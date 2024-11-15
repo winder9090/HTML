@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐播放器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="container">
+        <div id="player">
+            <input type="text" id="searchInput" placeholder="搜索音乐...">
+            <button id="searchButton">搜索</button>
+            <div id="musicInfo">
+                <img id="cover" src="" alt="专辑封面">
+                <h3 id="songName"></h3>
+                <p id="singer"></p>
+                <p id="album"></p>
+                <audio id="audioPlayer" controls></audio>
+                <div id="controls">
+                    <!-- 第一行: 上一首、播放、下一首 -->
+                    <div>
+                        <button id="prevButton">上一首</button>
+                        <button id="playButton">播放</button>
+                        <button id="nextButton">下一首</button>
+                    </div>
+                    <!-- 第二行: 收藏、下载、顺序播放 -->
+                    <div>
+                        <button id="favoriteButton">收藏</button>
+                        <button id="downloadButton">下载</button>
+                        <button id="playModeButton">顺序播放</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="favorites">
+            <h2>我的收藏</h2>
+            <input type="text" id="favoritesSearch" placeholder="搜索收藏...">
+            <ul id="favoritesList"></ul>
+            <div id="pagination">
+                <button id="prevPage">上一页</button>
+                <span id="pageInfo"></span>
+                <button id="nextPage">下一页</button>
+            </div>
+            <div id="importExportButtons">
+                <button id="exportFavorites">导出收藏</button>
+                <button id="importFavorites">导入收藏</button>
+            </div>
+            <button id="selectAllButton">全选</button>
+            <button id="deleteSelectedButton">删除选中</button>
+        </div>
+    </div>
+
+    <script>
+        let favorites = [];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+        let selectedFavorites = [];
+        let currentPlayIndex = 0;
+        let playMode = 'sequential'; // 'sequential', 'random', 'loop'
+
+
+        // 从 localStorage 中读取收藏的音乐
+        function loadFavoritesFromLocalStorage() {
+            const storedFavorites = localStorage.getItem('favorites');
+            if (storedFavorites) {
+                favorites = JSON.parse(storedFavorites);
+            }
+        }
+
+        // 将收藏的音乐保存到 localStorage
+        function saveFavoritesToLocalStorage() {
+            localStorage.setItem('favorites', JSON.stringify(favorites));
+        }
+
+        // 页面加载时从 localStorage 中读取收藏的音乐
+        loadFavoritesFromLocalStorage();
+
+        document.getElementById('searchButton').addEventListener('click', function () {
+            const query = document.getElementById('searchInput').value;
+            if (query) {
+                searchMusic(query);
+            }
+        });
+
+        function searchMusic(query) {
+            const url = `https://api.lolimi.cn/API/qqdg/?word=${encodeURIComponent(query)}&n=1`;
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.code === 200) {
+                        displayMusicInfo(data.data);
+                    } else {
+                        alert('未找到音乐');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('搜索失败');
+                });
+        }
+
+        function displayMusicInfo(musicData) {
+            document.getElementById('cover').src = musicData.cover;
+            document.getElementById('songName').innerText = musicData.song;
+            document.getElementById('singer').innerText = `歌手: ${musicData.singer}`;
+            document.getElementById('album').innerText = `专辑: ${musicData.album}`;
+            document.getElementById('audioPlayer').src = musicData.url;
+        }
+
+        document.getElementById('playButton').addEventListener('click', function () {
+            const audioPlayer = document.getElementById('audioPlayer');
+            const playButton = document.getElementById('playButton');
+
+            if (audioPlayer.paused) {
+                audioPlayer.play();
+                playButton.innerText = '暂停'; // 更改按钮文本为“暂停”
+            } else {
+                audioPlayer.pause();
+                playButton.innerText = '播放'; // 更改按钮文本为“播放”
+            }
+        });
+
+        // 监听音频播放结束事件，将按钮文本改回“播放”
+        document.getElementById('audioPlayer').addEventListener('ended', function () {
+            const playButton = document.getElementById('playButton');
+            playButton.innerText = '播放'; // 更改按钮文本为“播放”
+        });
+
+        document.getElementById('favoriteButton').addEventListener('click', function () {
+            const songName = document.getElementById('songName').innerText;
+            const singer = document.getElementById('singer').innerText;
+            const album = document.getElementById('album').innerText;
+            const cover = document.getElementById('cover').src;
+            const url = document.getElementById('audioPlayer').src;
+
+            const favoriteMusic = {
+                song: songName,
+                singer: singer,
+                album: album,
+                cover: cover,
+                url: url
+            };
+
+            favorites.push(favoriteMusic);
+            saveFavoritesToLocalStorage(); // 保存到 localStorage
+            updateFavoritesList();
+        });
+
+        document.getElementById('downloadButton').addEventListener('click', function () {
+            const songName = document.getElementById('songName').innerText;
+            const url = document.getElementById('audioPlayer').src;
+            const fileName = `${sanitizeFileName(songName)}.mp3`;
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        function sanitizeFileName(fileName) {
+            return fileName.replace(/[^a-zA-Z0-9-_]/g, '_');
+        }
+
+        function updateFavoritesList() {
+            const favoritesList = document.getElementById('favoritesList');
+            favoritesList.innerHTML = '';
+
+            const filteredFavorites = filterFavorites();
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedFavorites = filteredFavorites.slice(startIndex, endIndex);
+
+            paginatedFavorites.forEach((music, index) => {
+                const li = document.createElement('li');
+                li.innerText = `${music.song} - ${music.singer}`;
+                li.setAttribute('data-music', JSON.stringify(music)); // 添加自定义属性
+                li.addEventListener('click', function () {
+                    displayMusicInfo({
+                        song: music.song,
+                        singer: music.singer.replace('歌手: ', ''),
+                        album: music.album.replace('专辑: ', ''),
+                        cover: music.cover,
+                        url: music.url
+                    });
+                });
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'checkbox';
+                checkbox.checked = selectedFavorites.includes(music); // 确保复选框状态与 selectedFavorites 一致
+                checkbox.addEventListener('change', function () {
+                    if (checkbox.checked) {
+                        selectedFavorites.push(music);
+                    } else {
+                        selectedFavorites = selectedFavorites.filter(fav => fav !== music);
+                    }
+                });
+
+                const deleteButton = document.createElement('button');
+                deleteButton.innerText = '删除';
+                deleteButton.className = 'deleteButton';
+                deleteButton.addEventListener('click', function (event) {
+                    event.stopPropagation();
+                    deleteFavorite(music);
+                });
+
+                li.prepend(checkbox);
+                li.appendChild(deleteButton);
+                favoritesList.appendChild(li);
+            });
+
+            updatePagination(filteredFavorites.length);
+        }
+
+        function deleteFavorite(music) {
+            favorites = favorites.filter(fav => fav !== music);
+            saveFavoritesToLocalStorage();
+            updateFavoritesList();
+        }
+
+        function filterFavorites() {
+            const searchQuery = document.getElementById('favoritesSearch').value.toLowerCase();
+            return favorites.filter(music => {
+                return music.song.toLowerCase().includes(searchQuery) || music.singer.toLowerCase().includes(searchQuery);
+            });
+        }
+
+        function updatePagination(totalItems) {
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            document.getElementById('pageInfo').innerText = `第 ${currentPage} / ${totalPages} 页`;
+            document.getElementById('prevPage').disabled = currentPage === 1;
+            document.getElementById('nextPage').disabled = currentPage === totalPages;
+        }
+
+        document.getElementById('prevPage').addEventListener('click', function () {
+            if (currentPage > 1) {
+                currentPage--;
+                updateFavoritesList();
+            }
+        });
+
+        document.getElementById('nextPage').addEventListener('click', function () {
+            const filteredFavorites = filterFavorites();
+            const totalPages = Math.ceil(filteredFavorites.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateFavoritesList();
+            }
+        });
+
+        document.getElementById('favoritesSearch').addEventListener('input', updateFavoritesList);
+
+        // 导出收藏
+        document.getElementById('exportFavorites').addEventListener('click', function () {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(favorites));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "favorites.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+
+        // 导入收藏
+        document.getElementById('importFavorites').addEventListener('click', function () {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = function (event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        const contents = e.target.result;
+                        try {
+                            const importedFavorites = JSON.parse(contents);
+                            favorites = importedFavorites;
+                            saveFavoritesToLocalStorage();
+                            updateFavoritesList();
+                            alert('收藏已导入');
+                        } catch (error) {
+                            alert('导入失败，请确保文件格式正确');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        });
+
+        // 全选/全反
+        document.getElementById('selectAllButton').addEventListener('click', function () {
+            // const checkboxes = document.querySelectorAll('.checkbox');
+            if (arraysAreEqual(selectedFavorites,favorites)) {
+                selectedFavorites = [];
+                updateFavoritesList();
+                this.innerText = '全选';
+            } else {
+                selectedFavorites = [...favorites]; // 使用扩展运算符复制数组
+                updateFavoritesList();
+
+                this.innerText = '全反选';
+            }
+        });
+        function arraysAreEqual(arr1, arr2) {
+            if (arr1.length !== arr2.length) {
+                return false;
+            }
+            // 逐个比较每个元素
+            for (let i = 0; i < arr1.length; i++) {
+                if (arr1[i] !== arr2[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // 删除选中
+        document.getElementById('deleteSelectedButton').addEventListener('click', function () {
+            if (selectedFavorites.length === 0) {
+                alert('请先选择要删除的歌曲');
+                return;
+            }
+
+            selectedFavorites.forEach(music => {
+                favorites = favorites.filter(fav => fav !== music);
+            });
+
+            saveFavoritesToLocalStorage();
+            updateFavoritesList();
+            selectedFavorites = []; // 清空选中的歌曲
+        });
+
+        // 播放模式切换
+        document.getElementById('playModeButton').addEventListener('click', function () {
+            if (playMode === 'sequential') {
+                playMode = 'random';
+                this.innerText = '随机播放';
+            } else if (playMode === 'random') {
+                playMode = 'loop';
+                this.innerText = '循环播放';
+            } else if (playMode === 'loop') {
+                playMode = 'sequential';
+                this.innerText = '顺序播放';
+            }
+        });
+
+        // 播放下一首
+        document.getElementById('audioPlayer').addEventListener('ended', function () {
+            if (playMode === 'sequential') {
+                currentPlayIndex++;
+                if (currentPlayIndex >= favorites.length) {
+                    currentPlayIndex = 0;
+                }
+            } else if (playMode === 'random') {
+                currentPlayIndex = Math.floor(Math.random() * favorites.length);
+            } else if (playMode === 'loop') {
+                // 循环播放当前歌曲
+                this.currentTime = 0;
+                this.play();
+                return;
+            }
+
+            if (favorites.length > 0) {
+                displayMusicInfo(favorites[currentPlayIndex]);
+                this.play();
+            }
+        });
+
+        // 上一首
+        document.getElementById('prevButton').addEventListener('click', function () {
+            if (favorites.length === 0) return;
+
+            if (playMode === 'sequential') {
+                currentPlayIndex--;
+                if (currentPlayIndex < 0) {
+                    currentPlayIndex = favorites.length - 1;
+                }
+            } else if (playMode === 'random') {
+                currentPlayIndex = Math.floor(Math.random() * favorites.length);
+            } else if (playMode === 'loop') {
+                // 循环播放当前歌曲
+                document.getElementById('audioPlayer').currentTime = 0;
+                document.getElementById('audioPlayer').play();
+                return;
+            }
+
+            displayMusicInfo(favorites[currentPlayIndex]);
+            document.getElementById('audioPlayer').play();
+        });
+
+        // 下一首
+        document.getElementById('nextButton').addEventListener('click', function () {
+            if (favorites.length === 0) return;
+
+            if (playMode === 'sequential') {
+                currentPlayIndex++;
+                if (currentPlayIndex >= favorites.length) {
+                    currentPlayIndex = 0;
+                }
+            } else if (playMode === 'random') {
+                currentPlayIndex = Math.floor(Math.random() * favorites.length);
+            } else if (playMode === 'loop') {
+                // 循环播放当前歌曲
+                document.getElementById('audioPlayer').currentTime = 0;
+                document.getElementById('audioPlayer').play();
+                return;
+            }
+
+            displayMusicInfo(favorites[currentPlayIndex]);
+            document.getElementById('audioPlayer').play();
+            document.getElementById('playButton').innerText = '暂停'; // 更新播放按钮状态
+        });
+
+        // 初始化收藏列表
+        updateFavoritesList();
+    </script>
+</body>
+
+</html>
